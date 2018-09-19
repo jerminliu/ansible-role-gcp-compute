@@ -1,0 +1,14 @@
+---
+
+role_action: provision
+auth_kind: service_account
+
+env: test
+
+gce_prefix: demo
+gce_zone: us-central1-a
+
+instance_wait_retry_limit: 300
+instance_wait_connection_timeout: 300
+
+ansible_port: 22

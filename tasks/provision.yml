@@ -1,0 +1,80 @@
+---
+
+- name: create a disk(s)
+  gcp_compute_disk:
+    project: "{{ project_id }}"
+    auth_kind: "{{ auth_kind }}"
+    service_account_file: "{{ credentials_file }}"
+    name: "{{ gce_prefix }}-{{ item.name }}-os-disk"
+    size_gb: "{{ item.os_disk_size }}"
+    source_image: "{{ item.image }}"
+    zone: "{{ gce_zone }}"
+    scopes:
+      - https://www.googleapis.com/auth/compute
+    state: present
+  async: 7200
+  poll: 0
+  register: disks
+  loop: "{{ nodes }}"
+  when: nodes is defined
+
+- name: wait for disk creation to complete
+  async_status:
+    jid: "{{ item.ansible_job_id }}"
+  register: disk_instances
+  until: disk_instances.finished
+  retries: "{{ instance_wait_retry_limit }}"
+  delay: 10
+  loop: "{{ disks.results }}"
+
+- name: create instance(s)
+  gcp_compute_instance:
+    project: "{{ project_id }}"
+    auth_kind: "{{ auth_kind }}"
+    service_account_file: "{{ credentials_file }}"
+    name: "{{ gce_prefix }}-{{ item.item.item.name }}"
+    machine_type: "{{ item.item.item.machine_type }}"
+    zone: "{{ gce_zone }}"
+    disks:
+      - auto_delete: true
+        boot: true
+        source: "{{ item }}"
+    metadata:
+      app_name: "{{ item.item.item.app_name }}"
+      role: "{{ item.item.item.role }}"
+    tags:
+      - app-name-{{ item.item.item.app_name | replace('_','-') }}
+      - role-{{ item.item.item.role | replace('_','-') }}
+      - "{{ item.item.item.network_tag | replace('_','-') }}"
+    scopes:
+      - https://www.googleapis.com/auth/compute
+    state: present
+  async: 7200
+  poll: 0
+  register: deploy
+  loop: "{{ disks }}"
+  when: disks is defined
+
+
+- name: wait for instance creation to complete
+  async_status:
+    jid: "{{ item.ansible_job_id }}"
+  register: instances
+  until: instances.finished
+  retries: "{{ instance_wait_retry_limit }}"
+  delay: 10
+  loop: "{{ deploy.results }}"
+
+
+- name: waiting for server to come online
+  wait_for:
+    host: "{{ item.1.public_ip }}"
+    port: "{{ ansible_port }}"
+    timeout: "{{ instance_wait_connection_timeout }}"
+  with_subelements:
+    - "{{ instances.results }}"
+    - instance_data
+  when:
+    - instances.results is defined
+    - nodes is defined
+    - item.1.public_ip is defined
