@@ -1,7 +1,7 @@
 ---
 
 role_action: provision
-auth_kind: service_account
+auth_kind: serviceaccount
 
 env: test
 
